@@ -629,6 +629,16 @@ def create_template_v2():
     return output.getvalue()
 
 @st.cache_data
+def to_excel_tp(df_export):
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df_export_clean = df_export.copy()
+        cols_to_drop = ['workload_min', 'weight_points', 'Trạng thái']
+        df_export_clean = df_export_clean.drop(columns=[c for c in cols_to_drop if c in df_export_clean.columns])
+        df_export_clean.to_excel(writer, sheet_name='Details', index=False)
+    return output.getvalue()
+
+@st.cache_data
 def to_excel_output(df_master):
     output = io.BytesIO()
     df_export = df_master.drop(columns=['Visit_ID_Internal'], errors='ignore').copy()
@@ -770,20 +780,13 @@ def render_welcome_screen():
 
 def render_tp_ui(is_integrated=False):
     mode_key = st.session_state.global_state['config']['tp_mode']
+    mode_key_slug = "chedo1" if mode_key == "Chế độ 1" else "chedo2"
     st.session_state.last_mode = mode_key
     
     # Get Current Integrated Step (if applicable)
     step = st.session_state.global_state['step']
 
     # --- PAGE 1: SETUP ---
-    # Case: Normal TP Setup OR Integrated TP Setup (Embedded in input page)
-    # NOTE: In new flow, 'input_integrated' logic in render_vp_ui handles the top part.
-    # We only come here if we need to render the bottom TP part OR the full TP Setup page.
-    
-    # Logic split: 
-    # 1. Standalone TP -> Page='setup'
-    # 2. Integrated TP -> Step='input_integrated' (Render config below) OR Step='tp_result_integrated' (Render result)
-    
     show_setup = False
     if not is_integrated and st.session_state.page == 'setup': show_setup = True
     if is_integrated and step == 'input_integrated': show_setup = True
@@ -1150,34 +1153,20 @@ def render_tp_ui(is_integrated=False):
         with c_back: st.button("⬅️ Quay lại", on_click=lambda: st.session_state.update(page='setup'))
 
         with c_download:
-            buffer = io.BytesIO()
-            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                summary_data = pd.DataFrame(display_data)
-                if not summary_data.empty:
-                    if mode_key == "Chế độ 1":
-                         summary_data.columns = ['RouteID', 'Customer_Count', 'Display_Val']
-                         summary_data = summary_data[['RouteID', 'Customer_Count']]
-                    else:
-                        summary_data.columns = ['RouteID', 'Workload_Hours_Day', 'Customer_Count']
-                        summary_data = summary_data[['RouteID', 'Customer_Count', 'Workload_Hours_Day']]
-                    summary_data.to_excel(writer, sheet_name='Summary', index=False)
-                df_export = df_saved.copy()
-                cols_to_drop = ['workload_min', 'weight_points', 'Trạng thái']
-                df_export = df_export.drop(columns=[c for c in cols_to_drop if c in df_export.columns])
-                df_export.to_excel(writer, sheet_name='Details', index=False)
-            st.download_button("📥 Tải file excel kết quả", buffer.getvalue(), "Result.xlsx", use_container_width=True)
+            # TP Export Logic (Standalone)
+            if not is_integrated:
+                buffer = to_excel_tp(df_saved)
+                st.download_button(f"📥 Tải file excel kết quả", buffer, f"Result_Chiadiaban_{mode_key_slug}.xlsx", use_container_width=True)
 
         # INTEGRATION BRIDGE
         if is_integrated:
             with c_next:
                 if st.button("Tiếp tục Bước 3: Xếp lịch viếng thăm", type="primary"):
                     st.session_state.df_cust = df_saved.copy()
-                    # Fix BUG: Drop RouteID if exists before renaming
                     if 'RouteID' in st.session_state.df_cust.columns:
                         st.session_state.df_cust.drop(columns=['RouteID'], inplace=True)
                         
                     st.session_state.df_cust = st.session_state.df_cust.rename(columns={mapping['customer_code']: 'Customer code', 'territory_id': 'RouteID'})
-                    # FIX: Ensure RouteID is string
                     st.session_state.df_cust['RouteID'] = st.session_state.df_cust['RouteID'].astype(str)
                     
                     st.session_state.global_state['step'] = 'vp_process'
@@ -1202,7 +1191,13 @@ def render_vp_ui(is_integrated=False):
             st.markdown("---")
             with st.form("mapping"):
                 c1, c2 = st.columns(2)
-                map_c = {k: c1.selectbox(f"File Customers: {REQUIRED_COLS_CUST[k]}", df_c.columns, index=find_col_index(df_c.columns, k)) for k in REQUIRED_COLS_CUST}
+                
+                # --- HIDE RouteID for Integrated Mode ---
+                cols_cust_active = REQUIRED_COLS_CUST.copy()
+                if is_integrated and 'RouteID' in cols_cust_active:
+                    del cols_cust_active['RouteID']
+                
+                map_c = {k: c1.selectbox(f"File Customers: {cols_cust_active[k]}", df_c.columns, index=find_col_index(df_c.columns, k)) for k in cols_cust_active}
                 map_d = {k: c2.selectbox(f"File Distributors: {REQUIRED_COLS_DIST[k]}", df_d.columns, index=find_col_index(df_d.columns, k)) for k in REQUIRED_COLS_DIST}
                 
                 c_btn, c_msg = st.columns([1, 3])
@@ -1230,7 +1225,11 @@ def render_vp_ui(is_integrated=False):
                     df_d = df_d.rename(columns={v: k for k, v in map_d.items()})
                     
                     if 'Customer code' in df_c.columns: df_c['Customer code'] = df_c['Customer code'].astype(str).str.strip()
-                    if 'RouteID' in df_c.columns: df_c['RouteID'] = df_c['RouteID'].astype(str).str.strip()
+                    
+                    # Only process RouteID if not integrated
+                    if not is_integrated:
+                        if 'RouteID' in df_c.columns: df_c['RouteID'] = df_c['RouteID'].astype(str).str.strip()
+                    
                     if 'Distributor Code' in df_d.columns: df_d['Distributor Code'] = df_d['Distributor Code'].astype(str).str.strip()
                     
                     # VALIDATION LOGIC
@@ -1311,7 +1310,9 @@ def render_vp_ui(is_integrated=False):
             cols = st.columns(6)
             vt_cfg = {}
             for i, (k, v) in enumerate({'MT':19.5, 'Cooler':18.0, 'Gold':9.0, 'Silver':7.8, 'Bronze':6.8, 'default':10.0}.items()):
-                vt_cfg[k] = cols[i].number_input(k, 0.0, 60.0, v, step=1.0)
+                lbl = k
+                if k == 'default': lbl = "Mặc định/trống (phút)"
+                vt_cfg[k] = cols[i].number_input(lbl, 0.0, 60.0, v, step=1.0)
         
         c_back, c_run = st.columns([1, 5])
         if c_back.button("<< Quay lại"):
@@ -1330,7 +1331,6 @@ def render_vp_ui(is_integrated=False):
                     route_end_point_configs, vt_cfg, st.session_state.speed_cfg, pb
                 )
                 
-                # FIX: Check if result is empty before processing
                 if df_res.empty:
                     st.warning("Không tìm thấy lịch trình phù hợp. Vui lòng kiểm tra lại cấu hình hoặc dữ liệu (Tần suất, Segment...).")
                 else:
@@ -1499,9 +1499,27 @@ def render_vp_ui(is_integrated=False):
                 st.rerun()
 
         st.markdown("---")
-        if st.button("📥 Tải File Excel Kết Quả Cuối Cùng", type="primary"):
-            excel_data = to_excel_output(st.session_state.df_editing)
-            st.download_button("Download .xlsx", excel_data, "Final_RTM_Schedule.xlsx")
+        
+        # --- EXPORT BUTTONS ---
+        
+        # 1. Download Visit Plan (All Modes)
+        excel_data = to_excel_output(st.session_state.df_editing)
+        st.download_button("📥 Tải file Excel kết quả cuối cùng", excel_data, "Result_Xeplichviengtham.xlsx", type='primary')
+        
+        # 2. Download Territory Plan (Integrated Mode ONLY)
+        if is_integrated:
+            # Determine which TP result to grab
+            tp_mode = st.session_state.global_state['config']['tp_mode']
+            tp_slug = "chedo1" if tp_mode == "Chế độ 1" else "chedo2"
+            
+            # Fetch the edited TP result stored in session state
+            df_tp_res = None
+            if tp_mode == "Chế độ 1": df_tp_res = st.session_state.v1_df_edited
+            else: df_tp_res = st.session_state.v2_df_edited
+            
+            if df_tp_res is not None:
+                tp_buffer = to_excel_tp(df_tp_res)
+                st.download_button(f"📥 Tải file Excel kết quả Chia địa bàn ({tp_mode})", tp_buffer, f"Result_Chiadiaban_{tp_slug}.xlsx")
 
         if st.button("<< Quay lại từ đầu"):
             st.session_state.global_state['has_started'] = False
@@ -1535,7 +1553,9 @@ def main():
             # Input Stage (VP Style)
             if step == 'input_integrated':
                 render_vp_ui(is_integrated=True)
-            # TP Result Stage
+            # TP Process Stage (TP UI)
+            elif step == 'tp_setup' or (step == 'tp_process' and st.session_state.page in ['setup', 'result']):
+                render_tp_ui(is_integrated=True)
             elif step == 'tp_result_integrated':
                 render_tp_ui(is_integrated=True) # Will render result part
             # VP Process Stage (VP UI)
