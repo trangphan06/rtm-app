@@ -49,7 +49,7 @@ st.markdown("""
             text-align: center;
         }
 
-        /* CSS cho Heatmap (Code 2) */
+        /* CSS cho Heatmap */
         [data-testid="stDataFrame"] td {
             text-align: center !important;
             font-size: 11px !important;
@@ -62,6 +62,18 @@ st.markdown("""
             padding: 2px !important;
         }
         [data-testid="stDataFrame"] th button { display: none !important; }
+        
+        /* CSS cho Alert Căn giữa */
+        .warning-box {
+            background-color: #fffae5;
+            color: #856404;
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+            border: 1px solid #ffeeba;
+            margin-bottom: 10px;
+            font-weight: 500;
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -118,9 +130,14 @@ if 'confirm_reset' not in st.session_state: st.session_state.confirm_reset = Fal
 if 'depot_coords' not in st.session_state: st.session_state.depot_coords = None
 if 'vp_msg' not in st.session_state: st.session_state.vp_msg = None
 if 'vp_msg_type' not in st.session_state: st.session_state.vp_msg_type = None
+# --- Interaction States ---
+if 'editor_filter_key' not in st.session_state: st.session_state.editor_filter_key = None
+if 'show_download_options' not in st.session_state: st.session_state.show_download_options = False
+if 'tp_confirm_clear' not in st.session_state: st.session_state.tp_confirm_clear = False
+if 'vp_confirm_clear' not in st.session_state: st.session_state.vp_confirm_clear = False
 
 # ==========================================
-# 2. LOGIC FUNCTIONS (GIỮ NGUYÊN BẢN)
+# 2. LOGIC FUNCTIONS
 # ==========================================
 
 # --- CODE 1 HELPER ---
@@ -260,6 +277,18 @@ def generate_folium_map_tp(_df, _mapping, _time_matrix, mode="Chế độ 1"):
     colors = ["#FF0000", "#0000FF", "#00FF00", "#FFFF00", "#FF00FF", "#00FFFF", "#800000", "#008000", "#000080", "#FFA500"]
     unique_ids = sorted(df_plot['territory_id'].unique())
     color_map = {int(id): colors[(int(id) - 1) % len(colors)] for id in unique_ids}
+
+    # LEGEND HTML (Vertical Box - Bottom Left)
+    legend_html = ''' <div style="position: fixed; bottom: 30px; left: 30px; width: 120px; height: auto; 
+                    border:2px solid grey; z-index:9999; font-size:12px; 
+                    background-color:white; padding: 10px; opacity: 0.9;">
+                    <b>Chú giải:</b><br>'''
+    
+    for rid in unique_ids:
+        c = color_map.get(int(rid), 'gray')
+        legend_html += f'<i style="background:{c}; width:10px; height:10px; display:inline-block; margin-right: 5px;"></i> Tuyến {rid}<br>'
+    legend_html += "</div>"
+    m.get_root().html.add_child(folium.Element(legend_html))
     
     col_code = _mapping['customer_code']
     col_name = _mapping.get('customer_name')
@@ -269,16 +298,19 @@ def generate_folium_map_tp(_df, _mapping, _time_matrix, mode="Chế độ 1"):
     col_type = _mapping.get('type')
     
     for _, row in df_plot.iterrows():
+        # Enhanced Tooltip for TP
         tooltip_parts = [f"<b>KH: {row[col_code]}</b>", f"Tuyến: {row['territory_id']}"]
         if col_name and pd.notna(row.get(col_name)): tooltip_parts.append(f"Tên: {row[col_name]}")
         if col_addr and pd.notna(row.get(col_addr)): tooltip_parts.append(f"Đ/c: {row[col_addr]}")
         if col_vol and pd.notna(row.get(col_vol)): tooltip_parts.append(f"Vol: {row[col_vol]}")
         
+        # Mode 1 also gets full tooltip now
+        if col_freq and pd.notna(row.get(col_freq)): tooltip_parts.append(f"Tần suất: {row[col_freq]}")
+        if col_type and pd.notna(row.get(col_type)): tooltip_parts.append(f"Phân loại: {row[col_type]}")
+        
         if mode == "Chế độ 2":
-            if col_freq and pd.notna(row.get(col_freq)): tooltip_parts.append(f"Tần suất: {row[col_freq]}")
             if col_type and pd.notna(row.get(col_type)):
                 seg_val = str(row[col_type]).strip()
-                tooltip_parts.append(f"Phân loại: {seg_val}")
                 key = seg_val if seg_val in _time_matrix else 'Mặc định/Trống'
                 time_val = _time_matrix.get(key, 10.0)
                 tooltip_parts.append(f"Thời gian: {time_val}p")
@@ -602,28 +634,26 @@ def get_changed_visits(df_orig, df_curr):
     return diff[diff].index.tolist()
 
 @st.cache_data
-def create_template_excel(cols_dict, is_dist=False):
+def create_template_excel(is_dist=False):
     if is_dist:
-        data = { 'Distributor Code': ['12345678'], 'Distributor Name': ['NPP Thành Phát'], 'Latitude': [10.7769], 'Longitude': [106.7009] }
+        data = { 'Mã NPP': ['12345678'], 'Tên NPP': ['NPP Thành Phát'], 'Vĩ độ (Latitude)': [10.7769], 'Kinh độ (Longitude)': [106.7009] }
     else:
-        data = { 'RouteID': ['VN123456'], 'Customer code': ['12345678'], 'Customer Name': ['Tạp Hóa A'], 'Latitude': [10.77], 'Longitude': [106.70], 'Frequency': [4], 'Segment': ['Gold'] }
+        data = { 'RouteID': ['VN123456'], 'Mã KH': ['12345678'], 'Tên KH': ['Tạp Hóa A'], 'Vĩ độ (Latitude)': [10.77], 'Kinh độ (Longitude)': [106.70], 'Tần suất': [4], 'Phân loại Segment': ['Gold'], 'Thêm các cột khác tùy ý': [''] }
     df_sample = pd.DataFrame(data)
-    for col in cols_dict.keys():
-        if col not in df_sample.columns: df_sample[col] = ''
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer: df_sample.to_excel(writer, sheet_name='Template', index=False)
     return output.getvalue()
 
 @st.cache_data
 def create_template_v1():
-    df = pd.DataFrame({ "Customer Code (*)": ["KH01", "KH02"], "Latitude (*)": [10.7, 10.8], "Longitude (*)": [106.6, 106.7], "Customer Name": ["A", "B"], "Address": ["HCM", "HCM"], "VolEC": [100, 200], "Frequency": [4, 8], "Segment": ["MT", "Cooler"] })
+    df = pd.DataFrame({ "Mã KH (*)": ["KH01", "KH02"], "Vĩ độ (Latitude) (*)": [10.7, 10.8], "Kinh độ (Longitude) (*)": [106.6, 106.7], "Tên KH": ["A", "B"], "Địa chỉ": ["HCM", "HCM"], "VolEC": [100, 200], "Tần suất": [4, 8], "Phân loại Segment": ["MT", "Cooler"] })
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer: df.to_excel(writer, index=False)
     return output.getvalue()
 
 @st.cache_data
 def create_template_v2():
-    df = pd.DataFrame({ "Customer Code (*)": ["KH01", "KH02"], "Latitude (*)": [10.7, 10.8], "Longitude (*)": [106.6, 106.7], "Customer Name": ["A", "B"], "Address": ["HCM", "HCM"], "VolEC": [100, 200], "Frequency (*)": [4, 8], "Segment (*)": ["MT", "Cooler"] })
+    df = pd.DataFrame({ "Mã KH (*)": ["KH01", "KH02"], "Vĩ độ (Latitude) (*)": [10.7, 10.8], "Kinh độ (Longitude) (*)": [106.6, 106.7], "Tên KH": ["A", "B"], "Địa chỉ": ["HCM", "HCM"], "VolEC": [100, 200], "Tần suất (*)": [4, 8], "Phân loại Segment (*)": ["MT", "Cooler"] })
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer: df.to_excel(writer, index=False)
     return output.getvalue()
@@ -633,7 +663,7 @@ def to_excel_tp(df_export):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df_export_clean = df_export.copy()
-        cols_to_drop = ['workload_min', 'weight_points', 'Trạng thái']
+        cols_to_drop = ['workload_min', 'weight_points', 'Trạng thái', 'Bỏ chọn']
         df_export_clean = df_export_clean.drop(columns=[c for c in cols_to_drop if c in df_export_clean.columns])
         df_export_clean.to_excel(writer, sheet_name='Details', index=False)
     return output.getvalue()
@@ -642,6 +672,12 @@ def to_excel_tp(df_export):
 def to_excel_output(df_master):
     output = io.BytesIO()
     df_export = df_master.drop(columns=['Visit_ID_Internal'], errors='ignore').copy()
+    
+    # Remove technical columns if exist
+    for c in ['Bỏ chọn', 'Đã sửa', 'Chọn', 'Trạng thái']:
+        if c in df_export.columns:
+            df_export = df_export.drop(columns=[c])
+            
     df_export = df_export.sort_values(by=['RouteID', 'Week', 'Day', 'Sequence'])
     df_export['Agg_Dist'] = df_export.groupby(['RouteID', 'Week', 'Day'])['Distance (km)'].cumsum()
     df_export['Agg_Travel'] = df_export.groupby(['RouteID', 'Week', 'Day'])['Travel Time (min)'].cumsum()
@@ -676,7 +712,11 @@ def create_folium_map(df_filtered_dict, col_mapping):
             tooltip_parts = []
             for std_key, orig_label in col_mapping.items():
                 if std_key in row and pd.notna(row[std_key]): tooltip_parts.append(f"<b>{orig_label}:</b> {row[std_key]}")
-            tooltip_parts.append(f"<b>Thứ tự:</b> {row['Sequence']}")
+            # Ensure VP standard columns are shown too if not in col_mapping
+            if 'Sequence' in row: tooltip_parts.append(f"<b>Thứ tự:</b> {row['Sequence']}")
+            if 'Week' in row: tooltip_parts.append(f"<b>Tuần:</b> {row['Week']}")
+            if 'Day' in row: tooltip_parts.append(f"<b>Ngày:</b> {row['Day']}")
+            
             popup_txt = "<br>".join(tooltip_parts)
             icon_html = f"""<div style="background:{color};color:white;border-radius:50%;width:20px;height:20px;text-align:center;font-size:12px;font-weight:bold;line-height:20px;border:1px solid white;">{row['Sequence']}</div>"""
             folium.Marker( location=(row['Latitude'], row['Longitude']), icon=folium.DivIcon(html=icon_html), tooltip=popup_txt ).add_to(m)
@@ -753,6 +793,10 @@ def render_sidebar():
             st.session_state.map_version += 1
             st.session_state.vp_msg = None
             st.session_state.vp_msg_type = None
+            st.session_state.editor_filter_key = None
+            st.session_state.show_download_options = False
+            st.session_state.tp_confirm_clear = False
+            st.session_state.vp_confirm_clear = False
             # ========================
             
             st.session_state.global_state['config']['is_tp'] = check_tp
@@ -989,9 +1033,10 @@ def render_tp_ui(is_integrated=False):
 
         df_saved = st.session_state[key_saved].copy()
 
-        if st.session_state.get(key_snapshot) is None:
-            m_snapshot, _ = generate_folium_map_tp(df_original, mapping, st.session_state.time_matrix, mode=mode_key)
+        if st.session_state.get(key_snapshot) is None or st.session_state.map_needs_refresh:
+            m_snapshot, _ = generate_folium_map_tp(df_saved, mapping, st.session_state.time_matrix, mode=mode_key)
             st.session_state[key_snapshot] = m_snapshot
+            st.session_state.map_needs_refresh = False
 
         # Scorecard
         display_data = []
@@ -1020,29 +1065,21 @@ def render_tp_ui(is_integrated=False):
         st.markdown(f"""<div style="overflow-x: auto; white-space: nowrap; display: inline-block; max-width: 100%; border: 1px solid #eee; border-radius: 5px; background-color: #f9f9f9;">{''.join(html_items)}</div>""", unsafe_allow_html=True)
         st.divider()
 
-        # UI Layout Map & Edit
+        # UI Layout Map & Edit - UPDATED TO MATCH VP
         if 'editor_filter_mode' not in st.session_state: st.session_state.editor_filter_mode = 'all'
         if 'editor_filter_key' not in st.session_state: st.session_state.editor_filter_key = None
         if 'confirm_reset' not in st.session_state: st.session_state.confirm_reset = False
         map_key_obj = f"map_obj_{mode_key}"
-        if map_key_obj not in st.session_state: st.session_state[map_key_obj] = None
-        if 'map_needs_refresh' not in st.session_state: st.session_state.map_needs_refresh = True
-
+        
         c_map, c_edit = st.columns([3, 2])
+        
         with c_map:
-            if st.session_state[map_key_obj] is None or st.session_state.map_needs_refresh:
-                if st.session_state.get('just_reset', False):
-                    st.session_state[map_key_obj] = st.session_state[key_snapshot]
-                    st.session_state.just_reset = False
-                else:
-                    m_obj, _ = generate_folium_map_tp(df_saved, mapping, st.session_state.time_matrix, mode=mode_key)
-                    st.session_state[map_key_obj] = m_obj
-                st.session_state.map_needs_refresh = False
-            
+            # STATIC MAP LOGIC MOVED INSIDE COLUMN
             map_data = None
-            if st.session_state[map_key_obj]:
-                map_data = st_folium(st.session_state[map_key_obj], center=[df_saved[mapping['lat']].mean(), df_saved[mapping['lon']].mean()], zoom=11, height=500, returned_objects=["last_object_clicked"], key=f"map_v{st.session_state.map_version}", use_container_width=True)
+            if st.session_state[key_snapshot]:
+                 map_data = st_folium(st.session_state[key_snapshot], center=[df_saved[mapping['lat']].mean(), df_saved[mapping['lon']].mean()], zoom=11, height=550, returned_objects=["last_object_clicked"], key=f"map_v{st.session_state.map_version}", use_container_width=True)
 
+            # Logic for click processing
             if map_data and map_data.get("last_object_clicked"):
                 clicked_obj = map_data["last_object_clicked"]
                 c_lat, c_lng = clicked_obj['lat'], clicked_obj['lng']
@@ -1053,97 +1090,127 @@ def render_tp_ui(is_integrated=False):
                     if st.session_state.editor_filter_key != found_code:
                         st.session_state.editor_filter_mode = 'single'
                         st.session_state.editor_filter_key = found_code
-
-            colors = ["#FF0000", "#0000FF", "#00FF00", "#FFFF00", "#FF00FF", "#00FFFF", "#800000", "#008000", "#000080", "#FFA500"]
-            unique_ids = sorted(df_saved['territory_id'].unique())
-            color_map = {int(id): colors[(int(id) - 1) % len(colors)] for id in unique_ids}
-            legend_html = " ".join([f'<span style="background-color:{c};width:10px;height:10px;display:inline-block;margin-right:3px;"></span>T{i}' for i, c in color_map.items()])
-            st.markdown(legend_html, unsafe_allow_html=True)
+                        st.rerun()
 
         with c_edit:
-            with st.expander("Chỉnh sửa thủ công", expanded=True):
-                df_display_source = df_saved.copy()
-                orig_map_dict = dict(zip(df_original[mapping['customer_code']], df_original['territory_id']))
-                def check_change(row):
-                    code = row[mapping['customer_code']]
-                    curr_route = int(row['territory_id'])
-                    orig_route = int(orig_map_dict.get(code, curr_route))
-                    return "✏️" if curr_route != orig_route else ""
-                df_display_source['Trạng thái'] = df_display_source.apply(check_change, axis=1)
-                
-                filter_mode = st.session_state.editor_filter_mode
-                if filter_mode == 'single' and st.session_state.editor_filter_key:
-                    df_display = df_display_source[df_display_source[mapping['customer_code']] == st.session_state.editor_filter_key]
-                    st.info(f"KH: {st.session_state.editor_filter_key}")
-                elif filter_mode == 'changed':
-                    df_display = df_display_source[df_display_source['Trạng thái'] != ""]
-                    st.warning(f"Đang lọc {len(df_display)} KH thay đổi.")
-                else: df_display = df_display_source
+            st.subheader("🛠️ Chỉnh sửa thủ công")
+            
+            df_display_source = df_saved.copy()
+            orig_map_dict = dict(zip(df_original[mapping['customer_code']], df_original['territory_id']))
+            def check_change(row):
+                code = row[mapping['customer_code']]
+                curr_route = int(row['territory_id'])
+                orig_route = int(orig_map_dict.get(code, curr_route))
+                return "✏️" if curr_route != orig_route else ""
+            df_display_source['Trạng thái'] = df_display_source.apply(check_change, axis=1)
+            
+            filter_mode = st.session_state.editor_filter_mode
+            if filter_mode == 'single' and st.session_state.editor_filter_key:
+                df_display = df_display_source[df_display_source[mapping['customer_code']] == st.session_state.editor_filter_key]
+                st.info(f"KH: {st.session_state.editor_filter_key}")
+            elif filter_mode == 'changed':
+                df_display = df_display_source[df_display_source['Trạng thái'] != ""]
+                st.warning(f"Đang lọc {len(df_display)} KH thay đổi.")
+            else: df_display = df_display_source
 
-                cols_cfg = {}
-                show_cols = ['Trạng thái', mapping['customer_code'], 'territory_id']
-                if mapping.get('customer_name'): show_cols.insert(2, mapping['customer_name'])
-                if mode_key == "Chế độ 2":
-                    if mapping.get('freq'): show_cols.insert(3, mapping['freq'])
-                    if mapping.get('type'): show_cols.insert(4, mapping['type'])
-                
-                cols_cfg['Trạng thái'] = st.column_config.TextColumn("Trạng thái", width=80, disabled=True)
-                cols_cfg[mapping['customer_code']] = st.column_config.TextColumn("Mã KH", width=100, disabled=True)
-                cols_cfg['territory_id'] = st.column_config.SelectboxColumn("Tuyến", options=[int(x) for x in sorted(df_saved['territory_id'].unique())], required=True, width=80)
-                if mapping.get('customer_name'): cols_cfg[mapping['customer_name']] = st.column_config.TextColumn("Tên KH", width=180, disabled=True)
-                if mode_key == "Chế độ 2":
-                    if mapping.get('freq'): cols_cfg[mapping['freq']] = st.column_config.TextColumn("Tần suất", width=70, disabled=True)
-                    if mapping.get('type'): cols_cfg[mapping['type']] = st.column_config.TextColumn("Phân loại Segment", width=100, disabled=True)
-                
-                editor_key = f"editor_{mode_key}_{filter_mode}_{st.session_state.editor_filter_key}"
-                edited_data_sub = st.data_editor(df_display, column_config=cols_cfg, column_order=show_cols, use_container_width=False, hide_index=True, height=380, key=editor_key)
+            cols_cfg = {}
+            show_cols = ['Trạng thái', mapping['customer_code'], mapping['customer_name'], 'territory_id']
+            # Re-ordering: Trạng thái -> Mã -> Tên -> Tuyến -> (Tần suất, Phân loại)
+            
+            if mode_key == "Chế độ 2":
+                if mapping.get('freq'): show_cols.append(mapping['freq'])
+                if mapping.get('type'): show_cols.append(mapping['type'])
+            
+            cols_cfg['Trạng thái'] = st.column_config.TextColumn("Trạng thái", width=80, disabled=True)
+            cols_cfg[mapping['customer_code']] = st.column_config.TextColumn("Mã KH", width=100, disabled=True)
+            cols_cfg['territory_id'] = st.column_config.SelectboxColumn("Tuyến", options=[int(x) for x in sorted(df_saved['territory_id'].unique())], required=True, width=80)
+            if mapping.get('customer_name'): cols_cfg[mapping['customer_name']] = st.column_config.TextColumn("Tên KH", width=180, disabled=True)
+            if mode_key == "Chế độ 2":
+                if mapping.get('freq'): cols_cfg[mapping['freq']] = st.column_config.TextColumn("Tần suất", width=70, disabled=True)
+                if mapping.get('type'): cols_cfg[mapping['type']] = st.column_config.TextColumn("Phân loại Segment", width=100, disabled=True)
+            
+            editor_key = f"editor_{mode_key}_{filter_mode}_{st.session_state.editor_filter_key}"
+            
+            edited_data_sub = st.data_editor(df_display, column_config=cols_cfg, column_order=show_cols, use_container_width=False, hide_index=True, height=400, key=editor_key)
 
-                c_update, c_filter_change, c_clear = st.columns([1, 1.2, 0.8])
-                with c_update: btn_update = st.button("💾 Cập nhật", use_container_width=True, type="primary")
-                with c_filter_change: btn_show_changed = st.button("⚠️ Tuyến đã đổi", use_container_width=True, disabled=(filter_mode == 'changed'))
-                with c_clear: btn_clear = st.button("🔄 Bỏ lọc", use_container_width=True, disabled=(filter_mode == 'all'))
+            # --- CONTROL BUTTONS LOGIC (Unified with VP) ---
+            has_unsaved_changes = False
+            if not edited_data_sub['territory_id'].equals(df_display['territory_id']):
+                has_unsaved_changes = True
 
-                st.divider()
-                if not st.session_state.confirm_reset:
-                    if st.button("Hủy bỏ & Reset", type="secondary", use_container_width=True):
-                        st.session_state.confirm_reset = True
-                        st.rerun()
-                else:
-                    st.error("Quay về gốc? Mất dữ liệu đã sửa.")
-                    c_yes, c_no = st.columns(2)
-                    if c_yes.button("✅ Đồng ý", use_container_width=True, type="primary"):
-                        st.session_state[key_saved] = df_original.copy()
-                        st.session_state.editor_filter_mode = 'all'
-                        st.session_state.editor_filter_key = None
-                        st.session_state.confirm_reset = False
-                        st.session_state.just_reset = True 
-                        st.session_state.map_needs_refresh = True
-                        st.session_state.map_version += 1
-                        st.success("Đã Reset!")
-                        st.rerun()
-                    if c_no.button("❌ Hủy", use_container_width=True):
-                        st.session_state.confirm_reset = False
-                        st.rerun()
-
-                if btn_clear:
+            if st.session_state.tp_confirm_clear:
+                # WARNING MODE
+                st.markdown('<div class="warning-box">⚠️ Bạn có thay đổi chưa lưu.</div>', unsafe_allow_html=True)
+                c_back, c_disc = st.columns(2)
+                if c_back.button("Quay lại", key="btn_back_tp", use_container_width=True):
+                    st.session_state.tp_confirm_clear = False
+                    st.rerun()
+                if c_disc.button("Không lưu, bỏ lọc", key="btn_discard_tp", type="secondary", use_container_width=True):
                     st.session_state.editor_filter_mode = 'all'
                     st.session_state.editor_filter_key = None
+                    st.session_state.tp_confirm_clear = False
+                    st.session_state.map_version += 1 # Force Map Reset
                     st.rerun()
-                if btn_show_changed:
-                    st.session_state.editor_filter_mode = 'changed'
+            else:
+                # NORMAL MODE
+                c_update, c_filter_change, c_clear = st.columns([1, 1.2, 0.8])
+                
+                with c_update: 
+                    if st.button("💾 Cập nhật", use_container_width=True, type="primary"):
+                        new_map = dict(zip(edited_data_sub[mapping['customer_code']], edited_data_sub['territory_id']))
+                        def update_route_logic(row):
+                            code = row[mapping['customer_code']]
+                            return new_map.get(code, row['territory_id'])
+                        df_to_save = df_saved.copy()
+                        df_to_save['territory_id'] = df_to_save.apply(update_route_logic, axis=1)
+                        st.session_state[key_saved] = df_to_save
+                        st.session_state.map_needs_refresh = True # Refresh map on Save
+                        st.session_state.map_version += 1
+                        st.session_state.tp_confirm_clear = False
+                        st.success("Đã cập nhật!")
+                        st.rerun()
+
+                with c_filter_change: 
+                    # Disable "Changed Routes" if currently filtering single point OR no global changes
+                    is_single_filter = (st.session_state.editor_filter_mode == 'single')
+                    has_global_changes = not df_saved['territory_id'].equals(df_original['territory_id'])
+                    
+                    if st.button("🌪️ Lọc KH đã sửa", use_container_width=True, disabled=(filter_mode == 'changed' or is_single_filter or not has_global_changes)):
+                        st.session_state.editor_filter_mode = 'changed'
+                        st.session_state.editor_filter_key = None
+                        st.rerun()
+                        
+                with c_clear: 
+                    if st.button("✖ Bỏ lọc", use_container_width=True, disabled=(filter_mode == 'all')):
+                        if has_unsaved_changes:
+                            st.session_state.tp_confirm_clear = True
+                            st.rerun()
+                        else:
+                            st.session_state.editor_filter_mode = 'all'
+                            st.session_state.editor_filter_key = None
+                            st.session_state.map_version += 1 # Force map reset when clearing filter
+                            st.rerun()
+
+            st.divider()
+            if not st.session_state.confirm_reset:
+                if st.button("🔄 Hủy bỏ & Reset", type="secondary", use_container_width=True):
+                    st.session_state.confirm_reset = True
+                    st.rerun()
+            else:
+                st.error("Quay về phiên bản trước khi chỉnh sửa?")
+                c_yes, c_no = st.columns(2)
+                if c_yes.button("✅ Đồng ý", use_container_width=True, type="primary"):
+                    st.session_state[key_saved] = df_original.copy()
+                    st.session_state.editor_filter_mode = 'all'
                     st.session_state.editor_filter_key = None
-                    st.rerun()
-                if btn_update:
-                    new_map = dict(zip(edited_data_sub[mapping['customer_code']], edited_data_sub['territory_id']))
-                    def update_route_logic(row):
-                        code = row[mapping['customer_code']]
-                        return new_map.get(code, row['territory_id'])
-                    df_to_save = df_saved.copy()
-                    df_to_save['territory_id'] = df_to_save.apply(update_route_logic, axis=1)
-                    st.session_state[key_saved] = df_to_save
+                    st.session_state.confirm_reset = False
+                    st.session_state.just_reset = True 
                     st.session_state.map_needs_refresh = True
                     st.session_state.map_version += 1
-                    st.success("Đã cập nhật!")
+                    st.success("Đã Reset!")
+                    st.rerun()
+                if c_no.button("❌ Hủy", use_container_width=True):
+                    st.session_state.confirm_reset = False
                     st.rerun()
 
         # EXPORT & NAVIGATION
@@ -1179,8 +1246,8 @@ def render_vp_ui(is_integrated=False):
     if step == 'vp_input' or step == 'input_integrated':
         st.subheader("Bước 1: Tải dữ liệu")
         c1, c2 = st.columns(2)
-        c1.download_button("📥 Tải Template Customers", create_template_excel(REQUIRED_COLS_CUST, False), "Customers_Template.xlsx")
-        c2.download_button("📥 Tải Template Distributors", create_template_excel(REQUIRED_COLS_DIST, True), "Distributors_Template.xlsx")
+        c1.download_button("📥 Tải Template Customers", create_template_excel(is_dist=False), "Customers_Template.xlsx")
+        c2.download_button("📥 Tải Template Distributors", create_template_excel(is_dist=True), "Distributors_Template.xlsx")
         
         u1, u2 = st.columns(2)
         up_cust = u1.file_uploader("Upload File Customers", type=['xlsx'])
@@ -1315,7 +1382,7 @@ def render_vp_ui(is_integrated=False):
                 vt_cfg[k] = cols[i].number_input(lbl, 0.0, 60.0, v, step=1.0)
         
         c_back, c_run = st.columns([1, 5])
-        if c_back.button("<< Quay lại"):
+        if c_back.button("⬅️ Quay lại"):
             if is_integrated: st.session_state.global_state['step'] = 'tp_result_integrated'
             else: st.session_state.global_state['step'] = 'vp_input'
             st.rerun()
@@ -1387,7 +1454,7 @@ def render_vp_ui(is_integrated=False):
         
         st.markdown("---")
 
-        col_map, col_edit = st.columns([7, 3])
+        col_map, col_edit = st.columns([3, 2])
         
         with col_map:
             mf1, mf2 = st.columns([1, 2])
@@ -1399,6 +1466,7 @@ def render_vp_ui(is_integrated=False):
             df_map = df_view[(df_view['Week'].isin(weeks)) & (df_view['Day'].isin(days))]
             st.caption("💡 Click vào điểm trên bản đồ để sửa nhanh bên phải.")
             
+            # STATIC MAP FOR VP (Inside Column)
             map_data = st_folium(
                 create_folium_map(df_map.to_dict('list'), st.session_state.col_map_main), 
                 height=550, use_container_width=True,
@@ -1422,7 +1490,8 @@ def render_vp_ui(is_integrated=False):
             st.subheader("🛠️ Chỉnh sửa Thủ công")
             
             changed_ids = get_changed_visits(st.session_state.df_final, st.session_state.df_editing)
-            df_editor_view['Đã sửa'] = df_editor_view['Visit_ID_Internal'].apply(lambda x: "✏️" if x in changed_ids else "")
+            # Rename "Đã sửa" -> "Trạng thái"
+            df_editor_view['Trạng thái'] = df_editor_view['Visit_ID_Internal'].apply(lambda x: "✏️" if x in changed_ids else "")
 
             if st.session_state.editor_filter_mode == 'single' and st.session_state.map_clicked_code:
                 df_editor_view = df_editor_view[df_editor_view['Customer code'] == st.session_state.map_clicked_code]
@@ -1436,90 +1505,127 @@ def render_vp_ui(is_integrated=False):
                 column_config={
                     "Customer code": st.column_config.TextColumn("Mã KH", disabled=True),
                     "Customer Name": st.column_config.TextColumn("Tên KH", disabled=True),
+                    "Frequency": st.column_config.NumberColumn("Tần suất", disabled=True, width="small"),
+                    "Segment": st.column_config.TextColumn("Phân loại", disabled=True, width="small"),
                     "Week": st.column_config.SelectboxColumn("Tuần", options=['W1','W2','W3','W4'], required=True),
                     "Day": st.column_config.SelectboxColumn("Ngày", options=['T2','T3','T4','T5','T6','T7'], required=True),
                     "Sequence": st.column_config.NumberColumn("Thứ tự", disabled=True),
-                    "Đã sửa": st.column_config.TextColumn("Đã sửa", disabled=True, width="small"),
+                    "Trạng thái": st.column_config.TextColumn("Trạng thái", disabled=True, width="small"),
                 },
-                column_order=['Customer code', 'Customer Name', 'Week', 'Day', 'Sequence', 'Đã sửa'],
+                column_order=['Trạng thái', 'Customer code', 'Customer Name', 'Frequency', 'Segment', 'Week', 'Day', 'Sequence'],
                 hide_index=True, use_container_width=True, height=400, key="data_editor_widget"
             )
             
-            c_up, c_rst = st.columns(2)
-            if c_up.button("💾 Cập nhật", type="primary", use_container_width=True):
-                with st.spinner("Đang tính toán lại lộ trình..."):
-                    impacted_groups = set()
-                    for idx, row in edited_df.iterrows():
-                        if idx in df_editor_view.index:
-                            visit_id = df_editor_view.loc[idx, 'Visit_ID_Internal']
-                            mask = st.session_state.df_editing['Visit_ID_Internal'] == visit_id
-                            if mask.any():
-                                current_row = st.session_state.df_editing.loc[mask].iloc[0]
-                                old_r, old_w, old_d = current_row['RouteID'], current_row['Week'], current_row['Day']
-                                new_w, new_d = row['Week'], row['Day']
-                                if (old_w != new_w) or (old_d != new_d):
-                                    impacted_groups.add((old_r, old_w, old_d))
-                                    impacted_groups.add((old_r, new_w, new_d))
-                                    st.session_state.df_editing.loc[mask, ['Week', 'Day']] = [new_w, new_d]
-                    if impacted_groups:
-                        st.session_state.df_editing = recalculate_routes(st.session_state.df_editing, st.session_state.depot_coords, st.session_state.route_cfg, st.session_state.speed_cfg, impacted_groups=impacted_groups)
-                        st.session_state.map_version += 1
-                        st.session_state.has_changes = True 
-                        st.success("Đã cập nhật!")
-                        time.sleep(0.5) 
-                        st.rerun()
-                    else: st.info("Không có thay đổi về Ngày/Tuần để cập nhật.")
+            # --- NEW LOGIC: CONTROL BUTTONS VISIBILITY ---
+            has_unsaved_changes_vp = False
+            if not edited_df['Week'].equals(df_editor_view['Week']) or not edited_df['Day'].equals(df_editor_view['Day']):
+                has_unsaved_changes_vp = True
 
-            if not st.session_state.confirm_reset:
-                if c_rst.button("🔄 Hủy bỏ chỉnh sửa", use_container_width=True, disabled=not st.session_state.has_changes):
-                    st.session_state.confirm_reset = True
+            if st.session_state.vp_confirm_clear:
+                # WARNING MODE
+                st.markdown('<div class="warning-box">⚠️ Bạn có thay đổi chưa lưu.</div>', unsafe_allow_html=True)
+                c_back, c_disc = st.columns(2)
+                if c_back.button("Quay lại", key="btn_back_vp", use_container_width=True):
+                    st.session_state.vp_confirm_clear = False
+                    st.rerun()
+                if c_disc.button("Không lưu, bỏ lọc", key="btn_discard_vp", type="secondary", use_container_width=True):
+                    st.session_state.editor_filter_mode = 'all'
+                    st.session_state.map_clicked_code = None
+                    st.session_state.vp_confirm_clear = False
+                    st.session_state.map_version += 1 # Reset map state
                     st.rerun()
             else:
-                st.warning("Hủy bỏ toàn bộ chỉnh sửa thủ công & Quay về phiên bản ban đầu?")
-                c_yes, c_no = st.columns(2)
-                if c_yes.button("✅ Đồng ý", use_container_width=True):
-                    st.session_state.df_editing = st.session_state.df_final.copy()
-                    st.session_state.editor_filter_mode = 'all'
-                    st.session_state.map_version += 1
-                    st.session_state.has_changes = False
-                    st.session_state.confirm_reset = False
-                    st.rerun()
-                if c_no.button("❌ Không", use_container_width=True):
-                    st.session_state.confirm_reset = False
+                # NORMAL MODE
+                c_up, c_rst = st.columns(2)
+                if c_up.button("💾 Cập nhật", type="primary", use_container_width=True):
+                    with st.spinner("Đang tính toán lại lộ trình..."):
+                        impacted_groups = set()
+                        for idx, row in edited_df.iterrows():
+                            if idx in df_editor_view.index:
+                                visit_id = df_editor_view.loc[idx, 'Visit_ID_Internal']
+                                mask = st.session_state.df_editing['Visit_ID_Internal'] == visit_id
+                                if mask.any():
+                                    current_row = st.session_state.df_editing.loc[mask].iloc[0]
+                                    old_r, old_w, old_d = current_row['RouteID'], current_row['Week'], current_row['Day']
+                                    new_w, new_d = row['Week'], row['Day']
+                                    if (old_w != new_w) or (old_d != new_d):
+                                        impacted_groups.add((old_r, old_w, old_d))
+                                        impacted_groups.add((old_r, new_w, new_d))
+                                        st.session_state.df_editing.loc[mask, ['Week', 'Day']] = [new_w, new_d]
+                        if impacted_groups:
+                            st.session_state.df_editing = recalculate_routes(st.session_state.df_editing, st.session_state.depot_coords, st.session_state.route_cfg, st.session_state.speed_cfg, impacted_groups=impacted_groups)
+                            st.session_state.map_version += 1
+                            st.session_state.has_changes = True 
+                            st.session_state.vp_confirm_clear = False # Hide warning
+                            st.success("Đã cập nhật!")
+                            time.sleep(0.5) 
+                            st.rerun()
+                        else: st.info("Không có thay đổi về Ngày/Tuần để cập nhật.")
+
+                f1, f2 = st.columns([1.2, 0.8])
+                if f1.button("🌪️ Lọc KH đã sửa", use_container_width=True, disabled=not st.session_state.has_changes):
+                    st.session_state.editor_filter_mode = 'changed'
                     st.rerun()
                 
-            f1, f2 = st.columns(2)
-            if f1.button("🌪️ Lọc KH đã sửa", use_container_width=True, disabled=not st.session_state.has_changes):
-                st.session_state.editor_filter_mode = 'changed'
-                st.rerun()
-            is_filtering = st.session_state.editor_filter_mode != 'all'
-            if f2.button("✖ Bỏ lọc", use_container_width=True, disabled=not is_filtering):
-                st.session_state.editor_filter_mode = 'all'
-                st.session_state.map_clicked_code = None
-                st.rerun()
+                # Check for single filter mode or changed mode
+                is_filtering_vp = (st.session_state.editor_filter_mode != 'all') or (st.session_state.map_clicked_code is not None)
+                if f2.button("✖ Bỏ lọc", use_container_width=True, disabled=not is_filtering_vp):
+                    if has_unsaved_changes_vp:
+                        st.session_state.vp_confirm_clear = True
+                        st.rerun()
+                    else:
+                        st.session_state.editor_filter_mode = 'all'
+                        st.session_state.map_clicked_code = None
+                        st.session_state.map_version += 1 # Reset map state
+                        st.rerun()
+                        
+                if not st.session_state.confirm_reset:
+                    if st.button("🔄 Hủy bỏ & Reset", type="secondary", use_container_width=True, disabled=not st.session_state.has_changes):
+                        st.session_state.confirm_reset = True
+                        st.rerun()
+                else:
+                    st.warning("Quay về phiên bản trước khi chỉnh sửa?")
+                    c_yes, c_no = st.columns(2)
+                    if c_yes.button("✅ Đồng ý", use_container_width=True):
+                        st.session_state.df_editing = st.session_state.df_final.copy()
+                        st.session_state.editor_filter_mode = 'all'
+                        st.session_state.map_version += 1
+                        st.session_state.has_changes = False
+                        st.session_state.confirm_reset = False
+                        st.rerun()
+                    if c_no.button("❌ Không", use_container_width=True):
+                        st.session_state.confirm_reset = False
+                        st.rerun()
 
         st.markdown("---")
         
         # --- EXPORT BUTTONS ---
         
-        # 1. Download Visit Plan (All Modes)
-        excel_data = to_excel_output(st.session_state.df_editing)
-        st.download_button("📥 Tải file Excel kết quả cuối cùng", excel_data, "Result_Xeplichviengtham.xlsx", type='primary')
-        
-        # 2. Download Territory Plan (Integrated Mode ONLY)
+        # FIX: Unified Download Button Logic
         if is_integrated:
-            # Determine which TP result to grab
-            tp_mode = st.session_state.global_state['config']['tp_mode']
-            tp_slug = "chedo1" if tp_mode == "Chế độ 1" else "chedo2"
+            # Mode Integrated: Show Options first
+            if st.button("📥 Tải về (Tùy chọn)", type="primary"):
+                st.session_state.show_download_options = True
             
-            # Fetch the edited TP result stored in session state
-            df_tp_res = None
-            if tp_mode == "Chế độ 1": df_tp_res = st.session_state.v1_df_edited
-            else: df_tp_res = st.session_state.v2_df_edited
-            
-            if df_tp_res is not None:
-                tp_buffer = to_excel_tp(df_tp_res)
-                st.download_button(f"📥 Tải file Excel kết quả Chia địa bàn ({tp_mode})", tp_buffer, f"Result_Chiadiaban_{tp_slug}.xlsx")
+            if st.session_state.show_download_options:
+                c_d1, c_d2 = st.columns(2)
+                
+                # File 1: VP
+                excel_data = to_excel_output(st.session_state.df_editing)
+                c_d1.download_button("File Xếp lịch viếng thăm", excel_data, "Result_Xeplichviengtham.xlsx")
+                
+                # File 2: TP
+                tp_mode = st.session_state.global_state['config']['tp_mode']
+                tp_slug = "chedo1" if tp_mode == "Chế độ 1" else "chedo2"
+                df_tp_res = st.session_state.v1_df_edited if tp_mode == "Chế độ 1" else st.session_state.v2_df_edited
+                
+                if df_tp_res is not None:
+                    tp_buffer = to_excel_tp(df_tp_res)
+                    c_d2.download_button(f"File Chia địa bàn ({tp_mode})", tp_buffer, f"Result_Chiadiaban_{tp_slug}.xlsx")
+        else:
+            # Mode Standalone VP: Direct Download
+            excel_data = to_excel_output(st.session_state.df_editing)
+            st.download_button("📥 Tải về", excel_data, "Result_Xeplichviengtham.xlsx", type='primary')
 
         if st.button("<< Quay lại từ đầu"):
             st.session_state.global_state['has_started'] = False
