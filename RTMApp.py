@@ -742,9 +742,9 @@ def create_heatmap(df_dict, value_col, agg_mode, fmt="{:.1f}", title="Heatmap"):
     try:
         import matplotlib
         styled_df = pivot.style.format(fmt).background_gradient(cmap='RdYlGn_r', axis=None)
-        st.dataframe(styled_df, height=140, use_container_width=True, column_config={col: st.column_config.Column(width="small") for col in days})
+        st.dataframe(styled_df, height=140, width="stretch", column_config={col: st.column_config.Column(width="small") for col in days})
     except ImportError:
-        st.dataframe(pivot.style.format(fmt), height=140, use_container_width=True, column_config={col: st.column_config.Column(width="small") for col in days})
+        st.dataframe(pivot.style.format(fmt), height=140, width="stretch", column_config={col: st.column_config.Column(width="small") for col in days})
 
 def find_col_index(df_cols, target_name):
     for i, col in enumerate(df_cols):
@@ -846,7 +846,7 @@ def render_tp_ui(is_integrated=False):
             c_dl, c_up = st.columns([1, 3])
             with c_dl:
                 template_data = create_template_v1() if mode_key == "Chế độ 1" else create_template_v2()
-                st.download_button(f"📥 Tải template mẫu", template_data, f"Template_{mode_key}.xlsx", use_container_width=True)
+                st.download_button(f"📥 Tải template mẫu", template_data, f"Template_{mode_key}.xlsx", width="stretch")
             with c_up:
                 uploaded_file = st.file_uploader("Upload", type=['xlsx', 'xls'], label_visibility="collapsed")
 
@@ -988,7 +988,7 @@ def render_tp_ui(is_integrated=False):
                     min_capacity_input, max_capacity_input = 0, 0
 
             st.write("")
-            if st.button("🚀 Bắt đầu phân tuyến", type="primary", use_container_width=True):
+            if st.button("🚀 Bắt đầu phân tuyến", type="primary", width="stretch"):
                 df_input = st.session_state.df
                 res_df, res_stats = None, None
                 err = None
@@ -1092,7 +1092,7 @@ def render_tp_ui(is_integrated=False):
             # STATIC MAP LOGIC MOVED INSIDE COLUMN
             map_data = None
             if st.session_state[key_snapshot]:
-                 map_data = st_folium(st.session_state[key_snapshot], center=[df_saved[mapping['lat']].mean(), df_saved[mapping['lon']].mean()], zoom=11, height=550, returned_objects=["last_object_clicked"], key=f"map_v{st.session_state.map_version}", use_container_width=True)
+                 map_data = st_folium(st.session_state[key_snapshot], center=[df_saved[mapping['lat']].mean(), df_saved[mapping['lon']].mean()], zoom=11, height=550, returned_objects=["last_object_clicked"], key=f"map_v{st.session_state.map_version}", width="stretch")
 
             # Logic for click processing
             if map_data and map_data.get("last_object_clicked"):
@@ -1148,7 +1148,7 @@ def render_tp_ui(is_integrated=False):
             
             editor_key = f"editor_{mode_key}_{filter_mode}_{st.session_state.editor_filter_key}"
             
-            edited_data_sub = st.data_editor(df_display, column_config=cols_cfg, column_order=show_cols, use_container_width=False, hide_index=True, height=400, key=editor_key)
+            edited_data_sub = st.data_editor(df_display, column_config=cols_cfg, column_order=show_cols, width="content", hide_index=True, height=400, key=editor_key)
 
             # Control Logic
             has_unsaved_changes = False
@@ -1159,7 +1159,7 @@ def render_tp_ui(is_integrated=False):
             c_update, c_filter_change, c_clear = st.columns([1, 1.2, 0.8])
             
             with c_update: 
-                if st.button("💾 Cập nhật", use_container_width=True, type="primary"):
+                if st.button("💾 Cập nhật", width="stretch", type="primary"):
                     new_map = dict(zip(edited_data_sub[mapping['customer_code']], edited_data_sub['territory_id']))
                     def update_route_logic(row):
                         code = row[mapping['customer_code']]
@@ -1177,13 +1177,13 @@ def render_tp_ui(is_integrated=False):
                 is_single_filter = (st.session_state.editor_filter_mode == 'single')
                 has_global_changes = not df_saved['territory_id'].equals(df_original['territory_id'])
                 
-                if st.button("🌪️ Lọc KH đã sửa", use_container_width=True, disabled=(filter_mode == 'changed' or is_single_filter or not has_global_changes)):
+                if st.button("🌪️ Lọc KH đã sửa", width="stretch", disabled=(filter_mode == 'changed' or is_single_filter or not has_global_changes)):
                     st.session_state.editor_filter_mode = 'changed'
                     st.session_state.editor_filter_key = None
                     st.rerun()
                     
             with c_clear: 
-                if st.button("✖ Bỏ lọc", use_container_width=True, disabled=(filter_mode == 'all')):
+                if st.button("✖ Bỏ lọc", width="stretch", disabled=(filter_mode == 'all')):
                     if has_unsaved_changes:
                         st.session_state.tp_confirm_clear = True
                         st.rerun()
@@ -1199,7 +1199,7 @@ def render_tp_ui(is_integrated=False):
                 c_save_clear, c_discard_clear = st.columns(2)
                 
                 # Button: Save & Clear
-                if c_save_clear.button("Lưu & Bỏ lọc", type="secondary", use_container_width=True):
+                if c_save_clear.button("Lưu & Bỏ lọc", type="secondary", width="stretch"):
                      new_map = dict(zip(edited_data_sub[mapping['customer_code']], edited_data_sub['territory_id']))
                      def update_route_logic(row):
                          code = row[mapping['customer_code']]
@@ -1216,7 +1216,7 @@ def render_tp_ui(is_integrated=False):
                      st.rerun()
                 
                 # Button: Discard & Clear
-                if c_discard_clear.button("Không lưu & Bỏ lọc", type="secondary", use_container_width=True):
+                if c_discard_clear.button("Không lưu & Bỏ lọc", type="secondary", width="stretch"):
                     st.session_state.editor_filter_mode = 'all'
                     st.session_state.editor_filter_key = None
                     st.session_state.tp_confirm_clear = False
@@ -1226,13 +1226,13 @@ def render_tp_ui(is_integrated=False):
             st.divider()
             
             if not st.session_state.confirm_reset:
-                if st.button("🔄 Hủy bỏ & Reset", type="secondary", use_container_width=True):
+                if st.button("🔄 Hủy bỏ & Reset", type="secondary", width="stretch"):
                     st.session_state.confirm_reset = True
                     st.rerun()
             else:
                 st.error("Quay về phiên bản trước khi chỉnh sửa?")
                 c_yes, c_no = st.columns(2)
-                if c_yes.button("✅ Đồng ý", use_container_width=True, type="primary"):
+                if c_yes.button("✅ Đồng ý", width="stretch", type="primary"):
                     st.session_state[key_saved] = df_original.copy()
                     st.session_state.editor_filter_mode = 'all'
                     st.session_state.editor_filter_key = None
@@ -1242,7 +1242,7 @@ def render_tp_ui(is_integrated=False):
                     st.session_state.map_version += 1
                     st.success("Đã Reset!")
                     st.rerun()
-                if c_no.button("❌ Hủy", use_container_width=True):
+                if c_no.button("❌ Hủy", width="stretch"):
                     st.session_state.confirm_reset = False
                     st.rerun()
 
@@ -1256,7 +1256,7 @@ def render_tp_ui(is_integrated=False):
             # TP Export Logic (Standalone)
             if not is_integrated:
                 buffer = to_excel_tp(df_saved)
-                st.download_button(f"📥 Tải file excel kết quả", buffer, f"Result_Chiadiaban_{mode_key_slug}.xlsx", use_container_width=True)
+                st.download_button(f"📥 Tải file excel kết quả", buffer, f"Result_Chiadiaban_{mode_key_slug}.xlsx", width="stretch")
 
         # INTEGRATION BRIDGE
         if is_integrated:
@@ -1319,35 +1319,39 @@ def render_vp_ui(is_integrated=False):
                     if len(set(map_d.values())) < len(map_d):
                         st.error("⚠️ Lỗi (File Distributors): Bạn đang chọn 1 cột Excel cho nhiều trường dữ liệu khác nhau. Vui lòng kiểm tra lại!")
                         st.stop()
-
-                    st.session_state.col_map_main = map_c 
-                    df_c = df_c.rename(columns={v: k for k, v in map_c.items()})
-                    df_d = df_d.rename(columns={v: k for k, v in map_d.items()})
+                    # 1. Xử lý làm sạch dữ liệu
+                        df_c = df_c.rename(columns={v: k for k, v in map_c.items()})
+                        # (Đảm bảo các bước ép kiểu dữ liệu RouteID, Customer code... đã thực hiện)
+                        
+                        total_raw = len(df_c)
+                        # Xử lý tọa độ
+                        missing_coords_mask = df_c['Latitude'].isna() | df_c['Longitude'].isna()
+                        n_missing_coords = missing_coords_mask.sum()
+                        df_c = df_c.dropna(subset=['Latitude', 'Longitude'])
+                        
+                        # Xử lý trùng lặp
+                        n_dupes = df_c.duplicated(subset=['Customer code']).sum()
+                        df_c = df_c.drop_duplicates('Customer code', keep='first')
+                        
+                        cleaned_count = len(df_c)
+                        st.session_state.df_cust = df_c
+                        st.session_state.df_dist = df_d
                     
-                    if 'Customer code' in df_c.columns: df_c['Customer code'] = df_c['Customer code'].astype(str).str.strip()
+                        # 2. Xây dựng logic thông báo mới
+                        details = []
+                        if n_dupes > 0:
+                            details.append(f"Đã xóa {n_dupes} KH trùng lặp")
+                        if n_missing_coords > 0:
+                            details.append(f"Đã xóa {n_missing_coords} KH trống tọa độ")
                     
-                    # Only process RouteID if not integrated
-                    if not is_integrated:
-                        if 'RouteID' in df_c.columns: df_c['RouteID'] = df_c['RouteID'].astype(str).str.strip()
+                        if not details:
+                            msg = f"Dữ liệu tải lên có {cleaned_count} KH (Không có KH trùng lặp hay trống tọa độ.)"
+                        else:
+                            detail_str = " và ".join(details)
+                            msg = f"Dữ liệu tải lên có {cleaned_count} KH ({detail_str}.)"
                     
-                    if 'Distributor Code' in df_d.columns: df_d['Distributor Code'] = df_d['Distributor Code'].astype(str).str.strip()
-                    
-                    # VALIDATION LOGIC
-                    total_rows = len(df_c)
-                    missing_coords_mask = df_c['Latitude'].isna() | df_c['Longitude'].isna()
-                    n_missing_coords = missing_coords_mask.sum()
-                    df_c = df_c.dropna(subset=['Latitude', 'Longitude'])
-                    n_dupes = df_c.duplicated(subset=['Customer code']).sum()
-                    if n_dupes > 0: st.warning("Loại bỏ KH trùng lặp.")
-                    df_c = df_c.drop_duplicates('Customer code', keep='first')
-                    
-                    msg = f"Dữ liệu tải lên có {total_rows} KH. Có {n_dupes} KH trùng lặp, {n_missing_coords} KH trống tọa độ."
-                    st.session_state.vp_msg = msg
-                    st.session_state.vp_msg_type = 'warning' if (n_dupes > 0 or n_missing_coords > 0) else 'success'
-                    
-                    st.session_state.df_cust = df_c
-                    st.session_state.df_dist = df_d
-                    
+                        st.session_state.vp_msg = msg
+                        st.session_state.vp_msg_type = 'warning' if (n_dupes > 0 or n_missing_coords > 0) else 'success'
                     # BRIDGE LOGIC
                     if is_integrated:
                         # Map columns for Code 1
@@ -1501,7 +1505,7 @@ def render_vp_ui(is_integrated=False):
             # STATIC MAP FOR VP
             map_data = st_folium(
                 create_folium_map(df_map.to_dict('list'), st.session_state.col_map_main), 
-                height=550, use_container_width=True,
+                height=550, width="stretch",
                 key=f"folium_map_{st.session_state.map_version}",
                 returned_objects=["last_object_clicked"]
             )
@@ -1545,7 +1549,7 @@ def render_vp_ui(is_integrated=False):
                     "Trạng thái": st.column_config.TextColumn("Trạng thái", disabled=True, width="small"),
                 },
                 column_order=['Trạng thái', 'Customer code', 'Customer Name', 'Frequency', 'Segment', 'Week', 'Day', 'Sequence'],
-                hide_index=True, use_container_width=True, height=400, key="data_editor_widget"
+                hide_index=True, width="stretch", height=400, key="data_editor_widget"
             )
             
             # Control Logic
@@ -1557,7 +1561,7 @@ def render_vp_ui(is_integrated=False):
             c_up, c_filter, c_clear = st.columns([1, 1.2, 0.8])
             
             with c_up:
-                if st.button("💾 Cập nhật", type="primary", use_container_width=True):
+                if st.button("💾 Cập nhật", type="primary", width="stretch"):
                     with st.spinner("Đang tính toán lại lộ trình..."):
                         impacted_groups = set()
                         for idx, row in edited_df.iterrows():
@@ -1583,13 +1587,13 @@ def render_vp_ui(is_integrated=False):
                         else: st.info("Không có thay đổi về Ngày/Tuần để cập nhật.")
 
             with c_filter:
-                if st.button("🌪️ Lọc KH đã sửa", use_container_width=True, disabled=not st.session_state.has_changes):
+                if st.button("🌪️ Lọc KH đã sửa", width="stretch", disabled=not st.session_state.has_changes):
                     st.session_state.editor_filter_mode = 'changed'
                     st.rerun()
             
             with c_clear:
                 is_filtering_vp = (st.session_state.editor_filter_mode != 'all') or (st.session_state.map_clicked_code is not None)
-                if st.button("✖ Bỏ lọc", use_container_width=True, disabled=not is_filtering_vp):
+                if st.button("✖ Bỏ lọc", width="stretch", disabled=not is_filtering_vp):
                     if has_unsaved_changes_vp:
                         st.session_state.vp_confirm_clear = True
                         st.rerun()
@@ -1605,7 +1609,7 @@ def render_vp_ui(is_integrated=False):
                 c_save_clear, c_discard_clear = st.columns(2)
                 
                 # Button: Save & Clear
-                if c_save_clear.button("Lưu & Bỏ lọc", type="secondary", use_container_width=True):
+                if c_save_clear.button("Lưu & Bỏ lọc", type="secondary", width="stretch"):
                     with st.spinner("Đang tính toán lại lộ trình..."):
                         impacted_groups = set()
                         for idx, row in edited_df.iterrows():
@@ -1632,7 +1636,7 @@ def render_vp_ui(is_integrated=False):
                         st.rerun()
                 
                 # Button: Discard & Clear
-                if c_discard_clear.button("Không lưu & Bỏ lọc", type="secondary", use_container_width=True):
+                if c_discard_clear.button("Không lưu & Bỏ lọc", type="secondary", width="stretch"):
                     st.session_state.editor_filter_mode = 'all'
                     st.session_state.map_clicked_code = None
                     st.session_state.vp_confirm_clear = False
@@ -1642,20 +1646,20 @@ def render_vp_ui(is_integrated=False):
             st.divider()
             
             if not st.session_state.confirm_reset:
-                if st.button("🔄 Hủy bỏ & Reset", type="secondary", use_container_width=True, disabled=not st.session_state.has_changes):
+                if st.button("🔄 Hủy bỏ & Reset", type="secondary", width="stretch", disabled=not st.session_state.has_changes):
                     st.session_state.confirm_reset = True
                     st.rerun()
             else:
                 st.warning("Quay về phiên bản trước khi chỉnh sửa?")
                 c_yes, c_no = st.columns(2)
-                if c_yes.button("✅ Đồng ý", use_container_width=True):
+                if c_yes.button("✅ Đồng ý", width="stretch"):
                     st.session_state.df_editing = st.session_state.df_final.copy()
                     st.session_state.editor_filter_mode = 'all'
                     st.session_state.map_version += 1
                     st.session_state.has_changes = False
                     st.session_state.confirm_reset = False
                     st.rerun()
-                if c_no.button("❌ Không", use_container_width=True):
+                if c_no.button("❌ Không", width="stretch"):
                     st.session_state.confirm_reset = False
                     st.rerun()
 
