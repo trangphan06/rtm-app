@@ -80,6 +80,9 @@ st.markdown("""
 def render_main_title():
     st.markdown('<h1 class="main-title">Công cụ xếp tuyến - RTM Route Planner</h1>', unsafe_allow_html=True)
 
+# CẤU HÌNH BẢN ĐỒ ESRI
+ESRI_URL = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}"
+ESRI_ATTR = "Tiles &copy; Esri" # Đã thu gọn tối đa dòng chú thích
 # ==========================================
 # 1. QUẢN LÝ STATE
 # ==========================================
@@ -273,8 +276,7 @@ def generate_folium_map_tp(_df, _mapping, _time_matrix, mode="Chế độ 1"):
     if df_plot.empty: return None, None
     map_center = [df_plot[lat_col].mean(), df_plot[lon_col].mean()]
     
-    # === UPDATE: prefer_canvas=True để tối ưu hiệu năng hiển thị ===
-    m = folium.Map(location=map_center, zoom_start=11, prefer_canvas=True)
+    m = folium.Map(location=map_center, zoom_start=11, prefer_canvas=True, tiles=ESRI_URL, attr=ESRI_ATTR)
     # ==============================================================
     
     colors = ["#FF0000", "#0000FF", "#00FF00", "#FFFF00", "#FF00FF", "#00FFFF", "#800000", "#008000", "#000080", "#FFA500"]
@@ -703,7 +705,7 @@ def create_folium_map(df_filtered_dict, col_mapping):
     df_filtered = pd.DataFrame.from_dict(df_filtered_dict)
     if df_filtered.empty: return None
     center = [df_filtered['Latitude'].mean(), df_filtered['Longitude'].mean()]
-    m = folium.Map(location=center, zoom_start=13, tiles="OpenStreetMap")
+    m = folium.Map(location=center, zoom_start=13, tiles=ESRI_URL, attr=ESRI_ATTR)
     legend_html = ''' <div style="position: fixed; bottom: 30px; left: 30px; width: 80px; height: 130px; border:2px solid grey; z-index:9999; font-size:12px; background-color:white; padding: 10px; opacity: 0.9;"> <b>Chú giải:</b><br> <i style="background:red; width:10px; height:10px; display:inline-block;"></i> T2<br> <i style="background:green; width:10px; height:10px; display:inline-block;"></i> T3<br> <i style="background:blue; width:10px; height:10px; display:inline-block;"></i> T4<br> <i style="background:orange; width:10px; height:10px; display:inline-block;"></i> T5<br> <i style="background:purple; width:10px; height:10px; display:inline-block;"></i> T6<br> <i style="background:black; width:10px; height:10px; display:inline-block;"></i> T7<br> </div> '''
     m.get_root().html.add_child(folium.Element(legend_html))
     color_map = {'T2': 'red', 'T3': 'green', 'T4': 'blue', 'T5': 'orange', 'T6': 'purple', 'T7': 'black'}
@@ -910,7 +912,17 @@ def render_tp_ui(is_integrated=False):
                             df_proc = df_proc.drop_duplicates(subset=[cc_col], keep='first')
                             st.session_state.df = df_proc
                             
-                            st.session_state.upload_msg = f"Dữ liệu tải lên có {total_rows} KH. Có {n_dupes} KH trùng lặp, {n_missing_coords} KH trống tọa độ."
+                            cleaned_count = len(df_proc)
+                            details = []
+                            if n_dupes > 0: details.append(f"Đã xóa {n_dupes} KH trùng lặp")
+                            if n_missing_coords > 0: details.append(f"Đã xóa {n_missing_coords} KH trống tọa độ")
+                            
+                            if not details:
+                                msg = f"Dữ liệu tải lên có {cleaned_count} KH (Không có KH trùng lặp hay trống tọa độ.)"
+                            else:
+                                msg = f"Dữ liệu tải lên có {cleaned_count} KH ({' và '.join(details)}.)"
+                            
+                            st.session_state.upload_msg = msg
                             
                             if n_dupes > 0 or n_missing_coords > 0: st.session_state.upload_msg_type = "warning"
                             else: st.session_state.upload_msg_type = "success"
