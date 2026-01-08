@@ -136,7 +136,8 @@ if 'editor_filter_key' not in st.session_state: st.session_state.editor_filter_k
 if 'show_download_options' not in st.session_state: st.session_state.show_download_options = False
 if 'tp_confirm_clear' not in st.session_state: st.session_state.tp_confirm_clear = False
 if 'vp_confirm_clear' not in st.session_state: st.session_state.vp_confirm_clear = False
-
+if 'map_needs_refresh' not in st.session_state: st.session_state.map_needs_refresh = False
+if 'just_reset' not in st.session_state: st.session_state.just_reset = False
 # ==========================================
 # 2. LOGIC FUNCTIONS
 # ==========================================
@@ -1309,57 +1310,50 @@ def render_vp_ui(is_integrated=False):
 
                 if submitted:
                     if len(set(map_c.values())) < len(map_c):
-                        st.error("⚠️ Lỗi (File Customers): Bạn đang chọn 1 cột cho nhiều trường dữ liệu khác nhau. Vui lòng kiểm tra lại!")
-                        st.stop()
-                    if len(set(map_d.values())) < len(map_d):
-                        st.error("⚠️ Lỗi (File Distributors): Bạn đang chọn 1 cột Excel cho nhiều trường dữ liệu khác nhau. Vui lòng kiểm tra lại!")
+                        st.error("⚠️ Lỗi (File Customers): Bạn đang chọn 1 cột cho nhiều trường dữ liệu khác nhau.")
                         st.stop()
                     
-                    # 1. Xử lý làm sạch dữ liệu Customers
-                    df_c_clean = df_c.rename(columns={v: k for k, v in map_c.items()}).copy()
+                    # 1. Thực hiện Rename cột theo mapping ngay lập tức
+                    df_c_mapped = df_c.rename(columns={v: k for k, v in map_c.items()})
+                    df_d_mapped = df_d.rename(columns={v: k for k, v in map_d.items()})
                     
-                    n_missing_coords = (df_c_clean['Latitude'].isna() | df_c_clean['Longitude'].isna()).sum()
-                    df_c_clean = df_c_clean.dropna(subset=['Latitude', 'Longitude'])
+                    # 2. Làm sạch dữ liệu khách hàng
+                    df_c_mapped['Latitude'] = pd.to_numeric(df_c_mapped['Latitude'], errors='coerce')
+                    df_c_mapped['Longitude'] = pd.to_numeric(df_c_mapped['Longitude'], errors='coerce')
                     
-                    n_dupes = df_c_clean.duplicated(subset=['Customer code']).sum()
-                    df_c_clean = df_c_clean.drop_duplicates('Customer code', keep='first')
+                    # Tính toán số lượng để báo cáo
+                    n_missing_coords = (df_c_mapped['Latitude'].isna() | df_c_mapped['Longitude'].isna()).sum()
+                    df_c_mapped = df_c_mapped.dropna(subset=['Latitude', 'Longitude'])
                     
-                    cleaned_count = len(df_c_clean)
+                    n_dupes = df_c_mapped.duplicated(subset=['Customer code']).sum()
+                    df_c_mapped = df_c_mapped.drop_duplicates('Customer code', keep='first')
                     
-                    # 2. Xử lý làm sạch dữ liệu Distributors (Phần quan trọng nhất)
-                    df_d_clean = df_d.rename(columns={v: k for k, v in map_d.items()}).copy()
-                    df_d_clean = df_d_clean.dropna(subset=['Latitude', 'Longitude'])
+                    # 3. LƯU VÀO SESSION STATE (QUAN TRỌNG NHẤT)
+                    st.session_state.df_cust = df_c_mapped
+                    st.session_state.df_dist = df_d_mapped
+                    st.session_state.mapping_confirmed = True # Đánh dấu đã map xong
                     
-                    # 3. Gán vào Session State để sử dụng ở Screen 2
-                    st.session_state.df_cust = df_c_clean
-                    st.session_state.df_dist = df_d_clean
-                    
-                    # 4. Xây dựng logic thông báo
+                    # 4. Tạo thông báo
                     details = []
                     if n_dupes > 0: details.append(f"Đã xóa {n_dupes} KH trùng lặp")
                     if n_missing_coords > 0: details.append(f"Đã xóa {n_missing_coords} KH trống tọa độ")
                     
+                    cleaned_count = len(df_c_mapped)
                     if not details:
-                        msg = f"Dữ liệu tải lên có {cleaned_count} KH (Không có KH trùng lặp hay trống tọa độ.)"
+                        msg = f"Dữ liệu tải lên có {cleaned_count} KH (Sạch 100%)"
                     else:
                         msg = f"Dữ liệu tải lên có {cleaned_count} KH ({' và '.join(details)}.)"
                     
                     st.session_state.vp_msg = msg
                     st.session_state.vp_msg_type = 'warning' if (n_dupes > 0 or n_missing_coords > 0) else 'success'
                     
-                    # 5. Chuyển bước và Rerun ngay lập tức
+                    # 5. Chuyển bước
                     if is_integrated:
-                        st.session_state.df = df_c_clean.copy()
-                        st.session_state.col_mapping = {
-                            "customer_code": 'Customer code', "lat": 'Latitude', "lon": 'Longitude',
-                            "customer_name": 'Customer Name', "address": None, "vol_ec": None,
-                            "freq": 'Frequency', "type": 'Segment'
-                        }
-                        st.session_state.mapping_confirmed = True
-                        st.rerun()
+                        st.session_state.global_state['step'] = 'tp_setup' # Chuyển sang bước setup của TP
                     else:
-                        st.session_state.global_state['step'] = 'vp_process'
-                        st.rerun()
+                        st.session_state.global_state['step'] = 'vp_process' # Sang bước điều chỉnh của VP
+                    
+                    st.rerun()
 
         # --- INTEGRATED: Show TP Setup Below ---
         if is_integrated and st.session_state.get('mapping_confirmed'):
@@ -1368,24 +1362,35 @@ def render_vp_ui(is_integrated=False):
 
     # --- SCREEN 2: CONFIGURATION ---
     elif step == 'vp_process':
+        if st.session_state.get('df_dist') is None:
+            st.warning("Đang chờ tải dữ liệu...")
+            st.stop()
         if is_integrated: st.subheader("Bước 3: Điều chỉnh Xếp lịch viếng thăm")
         else: st.subheader("Bước 2: Điều chỉnh")
         
-        unique_dist = st.session_state.df_dist.drop_duplicates(subset=['Distributor Code'])
-        dist_opts = unique_dist.apply(lambda x: f"{x['Distributor Code']} - {x['Distributor Name']}", axis=1)
+        # --- CHỐT CHẶN AN TOÀN ---
+        if st.session_state.df_dist is None or st.session_state.df_cust is None:
+            st.error("⚠️ Không tìm thấy dữ liệu. Vui lòng quay lại bước Tải dữ liệu.")
+            if st.button("⬅️ Quay lại"):
+                st.session_state.global_state['step'] = 'vp_input' if not is_integrated else 'input_integrated'
+                st.rerun()
+            st.stop()
+
+        # Lấy tên cột thực tế từ Mapping (Nếu là Integrated Mode, tên cột đã được đổi ở bước trước)
+        # Đối với Standalone VP, ta sử dụng tên cột chuẩn vì đã rename ở bước 1
+        dist_id_col = 'Distributor Code'
+        dist_name_col = 'Distributor Name'
+        dist_lat_col = 'Latitude'
+        dist_lon_col = 'Longitude'
+
+        # Sử dụng drop_duplicates dựa trên tên cột đã được chuẩn hóa
+        unique_dist = st.session_state.df_dist.drop_duplicates(subset=[dist_id_col])
+        dist_opts = unique_dist.apply(lambda x: f"{x[dist_id_col]} - {x[dist_name_col]}", axis=1)
         sel_dist = st.selectbox("Chọn Nhà Phân Phối:", dist_opts)
         
-        sel_code = sel_dist.split(' - ')[0]
-        df_dist_tmp = st.session_state.df_dist.copy()
-        df_dist_tmp['Distributor Code'] = df_dist_tmp['Distributor Code'].astype(str).str.strip()
-        
-        mask = df_dist_tmp['Distributor Code'] == sel_code
-        if not mask.any():
-            st.error(f"❌ Không tìm thấy thông tin chi tiết cho mã NPP: {sel_code}")
-            st.stop()
-            
-        depot_row = df_dist_tmp[mask].iloc[0]
-        st.session_state.depot_coords = (float(depot_row['Latitude']), float(depot_row['Longitude']))
+        sel_code = str(sel_dist).split(' - ')[0]
+        depot_row = st.session_state.df_dist[st.session_state.df_dist[dist_id_col].astype(str) == sel_code].iloc[0]
+        st.session_state.depot_coords = (depot_row[dist_lat_col], depot_row[dist_lon_col])
         
         all_routes = sorted(st.session_state.df_cust['RouteID'].unique().astype(str))
         sel_routes = st.multiselect("Chọn RouteID:", all_routes, default=all_routes[:1])
@@ -1401,21 +1406,9 @@ def render_vp_ui(is_integrated=False):
                     custs = st.session_state.df_cust[st.session_state.df_cust['RouteID'].astype(str) == str(r_id)]
                     opts = custs.apply(lambda x: f"{x['Customer code']} - {x.get('Customer Name','')}", axis=1)
                     sel_c = c3.selectbox(f"Chọn KH {r_id}", opts, label_visibility="collapsed")
-                    
                     if sel_c:
-                        # --- FIX BUG: Đồng bộ kiểu dữ liệu và kiểm tra an toàn ---
-                        target_code = str(sel_c.split(' - ')[0]).strip()
-                        
-                        # Tạo mask so sánh sau khi ép kiểu chuỗi toàn bộ
-                        cust_mask = custs['Customer code'].astype(str).str.strip() == target_code
-                        
-                        if cust_mask.any():
-                            c_row = custs[cust_mask].iloc[0]
-                            route_end_point_configs[r_id] = (float(c_row['Latitude']), float(c_row['Longitude']))
-                        else:
-                            # Trường hợp hi hữu không tìm thấy (tránh crash app)
-                            route_end_point_configs[r_id] = None
-                        # -------------------------------------------------------
+                        c_row = custs[custs['Customer code'] == sel_c.split(' - ')[0]].iloc[0]
+                        route_end_point_configs[r_id] = (c_row['Latitude'], c_row['Longitude'])
                 else:
                     route_end_point_configs[r_id] = None
 
