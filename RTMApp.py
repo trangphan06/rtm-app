@@ -11,8 +11,6 @@ import warnings
 import time
 from ortools.constraint_solver import routing_enums_pb2
 from ortools.constraint_solver import pywrapcp
-
-# Tắt cảnh báo
 warnings.filterwarnings('ignore')
 
 # ==========================================
@@ -82,7 +80,7 @@ def render_main_title():
 
 # CẤU HÌNH BẢN ĐỒ ESRI
 ESRI_URL = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}"
-ESRI_ATTR = "Tiles &copy; Esri" # Đã thu gọn tối đa dòng chú thích
+ESRI_ATTR = "Tiles &copy; Esri" 
 # ==========================================
 # 1. QUẢN LÝ STATE
 # ==========================================
@@ -303,13 +301,11 @@ def generate_folium_map_tp(_df, _mapping, _time_matrix, mode="Chế độ 1"):
     col_type = _mapping.get('type')
     
     for _, row in df_plot.iterrows():
-        # Enhanced Tooltip for TP
         tooltip_parts = [f"<b>KH: {row[col_code]}</b>", f"Tuyến: {row['territory_id']}"]
         if col_name and pd.notna(row.get(col_name)): tooltip_parts.append(f"Tên: {row[col_name]}")
         if col_addr and pd.notna(row.get(col_addr)): tooltip_parts.append(f"Đ/c: {row[col_addr]}")
         if col_vol and pd.notna(row.get(col_vol)): tooltip_parts.append(f"Vol: {row[col_vol]}")
         
-        # Mode 1 also gets full tooltip now
         if col_freq and pd.notna(row.get(col_freq)): tooltip_parts.append(f"Tần suất: {row[col_freq]}")
         if col_type and pd.notna(row.get(col_type)): tooltip_parts.append(f"Phân loại: {row[col_type]}")
         
@@ -465,7 +461,6 @@ def solve_tsp_final(visits, depot_coords, speed_slow, speed_fast, mode='closed',
 def run_master_scheduler(df_cust, depot_coords, selected_route_ids, route_config_dict, visit_time_config, speed_config, progress_bar):
     SPEED_SLOW, SPEED_FAST = speed_config['slow'], speed_config['fast']
     df_cust = df_cust.copy()
-    # === FIX: Ensure RouteID is string to match selection ===
     if 'RouteID' in df_cust.columns:
         df_cust['RouteID'] = df_cust['RouteID'].astype(str).str.strip()
         
@@ -1319,43 +1314,42 @@ def render_vp_ui(is_integrated=False):
                     if len(set(map_d.values())) < len(map_d):
                         st.error("⚠️ Lỗi (File Distributors): Bạn đang chọn 1 cột Excel cho nhiều trường dữ liệu khác nhau. Vui lòng kiểm tra lại!")
                         st.stop()
-                    # 1. Xử lý làm sạch dữ liệu
-                        df_c = df_c.rename(columns={v: k for k, v in map_c.items()})
-                        # (Đảm bảo các bước ép kiểu dữ liệu RouteID, Customer code... đã thực hiện)
-                        
-                        total_raw = len(df_c)
-                        # Xử lý tọa độ
-                        missing_coords_mask = df_c['Latitude'].isna() | df_c['Longitude'].isna()
-                        n_missing_coords = missing_coords_mask.sum()
-                        df_c = df_c.dropna(subset=['Latitude', 'Longitude'])
-                        
-                        # Xử lý trùng lặp
-                        n_dupes = df_c.duplicated(subset=['Customer code']).sum()
-                        df_c = df_c.drop_duplicates('Customer code', keep='first')
-                        
-                        cleaned_count = len(df_c)
-                        st.session_state.df_cust = df_c
-                        st.session_state.df_dist = df_d
                     
-                        # 2. Xây dựng logic thông báo mới
-                        details = []
-                        if n_dupes > 0:
-                            details.append(f"Đã xóa {n_dupes} KH trùng lặp")
-                        if n_missing_coords > 0:
-                            details.append(f"Đã xóa {n_missing_coords} KH trống tọa độ")
+                    # 1. Xử lý làm sạch dữ liệu Customers
+                    df_c_clean = df_c.rename(columns={v: k for k, v in map_c.items()}).copy()
                     
-                        if not details:
-                            msg = f"Dữ liệu tải lên có {cleaned_count} KH (Không có KH trùng lặp hay trống tọa độ.)"
-                        else:
-                            detail_str = " và ".join(details)
-                            msg = f"Dữ liệu tải lên có {cleaned_count} KH ({detail_str}.)"
+                    n_missing_coords = (df_c_clean['Latitude'].isna() | df_c_clean['Longitude'].isna()).sum()
+                    df_c_clean = df_c_clean.dropna(subset=['Latitude', 'Longitude'])
                     
-                        st.session_state.vp_msg = msg
-                        st.session_state.vp_msg_type = 'warning' if (n_dupes > 0 or n_missing_coords > 0) else 'success'
-                    # BRIDGE LOGIC
+                    n_dupes = df_c_clean.duplicated(subset=['Customer code']).sum()
+                    df_c_clean = df_c_clean.drop_duplicates('Customer code', keep='first')
+                    
+                    cleaned_count = len(df_c_clean)
+                    
+                    # 2. Xử lý làm sạch dữ liệu Distributors (Phần quan trọng nhất)
+                    df_d_clean = df_d.rename(columns={v: k for k, v in map_d.items()}).copy()
+                    df_d_clean = df_d_clean.dropna(subset=['Latitude', 'Longitude'])
+                    
+                    # 3. Gán vào Session State để sử dụng ở Screen 2
+                    st.session_state.df_cust = df_c_clean
+                    st.session_state.df_dist = df_d_clean
+                    
+                    # 4. Xây dựng logic thông báo
+                    details = []
+                    if n_dupes > 0: details.append(f"Đã xóa {n_dupes} KH trùng lặp")
+                    if n_missing_coords > 0: details.append(f"Đã xóa {n_missing_coords} KH trống tọa độ")
+                    
+                    if not details:
+                        msg = f"Dữ liệu tải lên có {cleaned_count} KH (Không có KH trùng lặp hay trống tọa độ.)"
+                    else:
+                        msg = f"Dữ liệu tải lên có {cleaned_count} KH ({' và '.join(details)}.)"
+                    
+                    st.session_state.vp_msg = msg
+                    st.session_state.vp_msg_type = 'warning' if (n_dupes > 0 or n_missing_coords > 0) else 'success'
+                    
+                    # 5. Chuyển bước và Rerun ngay lập tức
                     if is_integrated:
-                        # Map columns for Code 1
-                        st.session_state.df = df_c.copy()
+                        st.session_state.df = df_c_clean.copy()
                         st.session_state.col_mapping = {
                             "customer_code": 'Customer code', "lat": 'Latitude', "lon": 'Longitude',
                             "customer_name": 'Customer Name', "address": None, "vol_ec": None,
@@ -1382,8 +1376,16 @@ def render_vp_ui(is_integrated=False):
         sel_dist = st.selectbox("Chọn Nhà Phân Phối:", dist_opts)
         
         sel_code = sel_dist.split(' - ')[0]
-        depot_row = st.session_state.df_dist[st.session_state.df_dist['Distributor Code'] == sel_code].iloc[0]
-        st.session_state.depot_coords = (depot_row['Latitude'], depot_row['Longitude'])
+        df_dist_tmp = st.session_state.df_dist.copy()
+        df_dist_tmp['Distributor Code'] = df_dist_tmp['Distributor Code'].astype(str).str.strip()
+        
+        mask = df_dist_tmp['Distributor Code'] == sel_code
+        if not mask.any():
+            st.error(f"❌ Không tìm thấy thông tin chi tiết cho mã NPP: {sel_code}")
+            st.stop()
+            
+        depot_row = df_dist_tmp[mask].iloc[0]
+        st.session_state.depot_coords = (float(depot_row['Latitude']), float(depot_row['Longitude']))
         
         all_routes = sorted(st.session_state.df_cust['RouteID'].unique().astype(str))
         sel_routes = st.multiselect("Chọn RouteID:", all_routes, default=all_routes[:1])
@@ -1399,9 +1401,21 @@ def render_vp_ui(is_integrated=False):
                     custs = st.session_state.df_cust[st.session_state.df_cust['RouteID'].astype(str) == str(r_id)]
                     opts = custs.apply(lambda x: f"{x['Customer code']} - {x.get('Customer Name','')}", axis=1)
                     sel_c = c3.selectbox(f"Chọn KH {r_id}", opts, label_visibility="collapsed")
+                    
                     if sel_c:
-                        c_row = custs[custs['Customer code'] == sel_c.split(' - ')[0]].iloc[0]
-                        route_end_point_configs[r_id] = (c_row['Latitude'], c_row['Longitude'])
+                        # --- FIX BUG: Đồng bộ kiểu dữ liệu và kiểm tra an toàn ---
+                        target_code = str(sel_c.split(' - ')[0]).strip()
+                        
+                        # Tạo mask so sánh sau khi ép kiểu chuỗi toàn bộ
+                        cust_mask = custs['Customer code'].astype(str).str.strip() == target_code
+                        
+                        if cust_mask.any():
+                            c_row = custs[cust_mask].iloc[0]
+                            route_end_point_configs[r_id] = (float(c_row['Latitude']), float(c_row['Longitude']))
+                        else:
+                            # Trường hợp hi hữu không tìm thấy (tránh crash app)
+                            route_end_point_configs[r_id] = None
+                        # -------------------------------------------------------
                 else:
                     route_end_point_configs[r_id] = None
 
@@ -1557,7 +1571,6 @@ def render_vp_ui(is_integrated=False):
             if not edited_df['Week'].equals(df_editor_view['Week']) or not edited_df['Day'].equals(df_editor_view['Day']):
                 has_unsaved_changes_vp = True
             
-            # --- NEW LAYOUT: 1 Row for 3 main buttons [1, 1.2, 0.8] ---
             c_up, c_filter, c_clear = st.columns([1, 1.2, 0.8])
             
             with c_up:
@@ -1603,7 +1616,6 @@ def render_vp_ui(is_integrated=False):
                         st.session_state.map_version += 1 
                         st.rerun()
             
-            # --- WARNING AREA BELOW MAIN BUTTONS ---
             if st.session_state.vp_confirm_clear:
                 st.caption("⚠️ Bạn có thay đổi chưa lưu.")
                 c_save_clear, c_discard_clear = st.columns(2)
